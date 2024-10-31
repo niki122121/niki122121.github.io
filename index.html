@@ -3,44 +3,57 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>High-Quality Audio Recorder</title>
+  <title>High-Quality Audio Recorder with Volume Indicator</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
     button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+    .indicator { display: none; margin-top: 20px; }
+    .volume-meter { width: 100%; background: #ccc; height: 20px; border-radius: 10px; margin: 10px 0; }
+    .volume-level { height: 100%; width: 0%; background: green; border-radius: 10px; }
     audio { margin-top: 20px; }
   </style>
 </head>
 <body>
 
-  <h1>High-Quality Audio Recorder</h1>
+  <h1>High-Quality Audio Recorder with Volume Indicator</h1>
   <p>Click "Start Recording" to capture high-quality audio. When done, click "Stop Recording" to save and play the recording.</p>
 
   <button id="start-btn">Start Recording</button>
   <button id="stop-btn" disabled>Stop Recording</button>
   
+  <!-- Microphone active indicator -->
+  <div id="indicator" class="indicator">
+    <p>Microphone is active...</p>
+    <div class="volume-meter">
+      <div id="volume-level" class="volume-level"></div>
+    </div>
+  </div>
+
   <h3>Playback</h3>
   <audio id="audio-playback" controls></audio>
 
   <script>
     let mediaRecorder;
     let audioChunks = [];
+    let audioContext, analyser, microphone, dataArray;
     const startButton = document.getElementById('start-btn');
     const stopButton = document.getElementById('stop-btn');
     const audioElement = document.getElementById('audio-playback');
+    const indicator = document.getElementById('indicator');
+    const volumeLevel = document.getElementById('volume-level');
 
     // Event listeners for buttons
     startButton.addEventListener('click', startRecording);
     stopButton.addEventListener('click', stopRecording);
 
-    // Start recording function
     async function startRecording() {
       try {
         // Access the microphone with specified audio constraints
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             sampleRate: 48000,           // 48 kHz sample rate for high quality
-            channelCount: 2,             // Stereo recording
-            echoCancellation: false,     // Disable echo cancellation for clearer quality
+            channelCount: 1,             // Mono recording
+            echoCancellation: false,     // Disable echo cancellation
             noiseSuppression: false,     // Disable noise suppression
             autoGainControl: false       // Disable auto gain control
           }
@@ -56,6 +69,10 @@
         // Start recording
         mediaRecorder.start();
 
+        // Show the microphone indicator and set up audio processing
+        indicator.style.display = 'block';
+        setupVolumeMeter(stream);
+
         // Update button states
         startButton.disabled = true;
         stopButton.disabled = false;
@@ -66,7 +83,6 @@
       }
     }
 
-    // Stop recording function
     function stopRecording() {
       mediaRecorder.stop();
 
@@ -78,12 +94,50 @@
         // Set the audio element source to the new Blob URL for playback
         audioElement.src = audioUrl;
 
+        // Hide microphone indicator
+        indicator.style.display = 'none';
+
         // Reset button states
         startButton.disabled = false;
         stopButton.disabled = true;
 
+        // Close the audio context to stop analyzing
+        audioContext.close();
+
         console.log('Recording stopped and ready for playback');
       };
+    }
+
+    function setupVolumeMeter(stream) {
+      // Create an audio context and analyser
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+
+      // Create microphone input and connect to analyser
+      microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+
+      // Data array to hold the volume data
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      // Call updateVolumeMeter every animation frame
+      updateVolumeMeter();
+    }
+
+    function updateVolumeMeter() {
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume (from 0 to 100%)
+      let sum = dataArray.reduce((a, b) => a + b, 0);
+      let average = sum / dataArray.length;
+      let volumePercentage = Math.min((average / 255) * 100, 100);
+
+      // Update the width of the volume level bar
+      volumeLevel.style.width = volumePercentage + '%';
+
+      // Repeat this function to keep updating the volume level
+      requestAnimationFrame(updateVolumeMeter);
     }
   </script>
 
